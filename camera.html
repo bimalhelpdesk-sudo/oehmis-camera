@@ -16,7 +16,7 @@
 <div id="info" class="msg">Starting front camera and face verification...</div>
 <div class="camera"><video id="video" autoplay playsinline muted></video><div id="challenge" class="challenge">Preparing...</div></div>
 <div class="progress"><div id="bar" class="bar"></div></div>
-<div id="details" class="msg small">Your face must be visible inside the camera. After the requested action is detected, the Capture Live Photo button will be enabled. Press it to take the verified live photo.</div>
+<div id="details" class="msg small">Follow the instruction shown above if possible. The Capture Live Photo button is fully manual and can be pressed whenever you are ready.</div>
 <button id="capture" class="btn primary" disabled>📸 Capture Live Photo</button><button id="cancel" class="btn danger">Cancel</button>
 </div></div>
 <script>
@@ -35,36 +35,20 @@ function nose(lm){return {x:lm[1].x,y:lm[1].y}}
 function setProgress(v){v=Math.max(0,Math.min(100,v));if(v!==lastProgress){lastProgress=v;bar.style.width=v+'%'}}
 function fail(msg){info.innerHTML='<span class="bad">'+msg+'</span>';details.textContent='Keep your face clearly visible and follow the instruction. The photo will be captured automatically after verification.'}
 function verify(lm){
- if(!lm||lm.length<468){fail('Face not detected. Look at the camera.');setProgress(0);return}
+ if(!lm||lm.length<468){
+   info.innerHTML='<span class="bad">Face not detected. Look at the camera.</span>';
+   setProgress(0);
+   return;
+ }
  const left=lm[33],right=lm[263],top=lm[10],bottom=lm[152];
  const faceW=dist(left,right),faceH=dist(top,bottom);
- if(faceW<.12||faceH<.12){fail('Move closer so your face is clearly visible.');setProgress(0);return}
- const n=nose(lm);
- const leftEar=ear(lm,[33,160,158,133,153,144]);
- const rightEar=ear(lm,[362,385,387,263,373,380]);
- const e=(leftEar+rightEar)/2;
- const mr=mouthRatio(lm);
- if(!baseline){baseline={x:n.x,y:n.y};smileBaseline=mr;info.textContent='Face detected. '+challenge+' now.';actionStart=performance.now()}
- const dx=n.x-baseline.x,dy=n.y-baseline.y;
- let done=false,p=0;
- if(challengeId==='BLINK_YOUR_EYES'){
-   if(e<0.20) blinkClosed=true;
-   if(blinkClosed&&e>0.27){done=true;p=100}else p=blinkClosed?70:Math.min(55,Math.max(10,(.27-e)*300));
- }else if(challengeId==='SMILE'){
-   const increase=mr-(smileBaseline||0);
-   p=Math.min(100,Math.max(0,increase*900));
-   if(increase>0.045)done=true;
- }else if(challengeId==='MOVE_FACE_LEFT'){
-   p=Math.min(100,Math.max(0,(-dx)*900)); if(dx<-.08)done=true;
- }else if(challengeId==='MOVE_FACE_RIGHT'){
-   p=Math.min(100,Math.max(0,dx*900)); if(dx>.08)done=true;
- }else if(challengeId==='MOVE_FACE_UP'){
-   p=Math.min(100,Math.max(0,(-dy)*900)); if(dy<-.07)done=true;
- }else if(challengeId==='MOVE_FACE_DOWN'){
-   p=Math.min(100,Math.max(0,dy*900)); if(dy>.07)done=true;
+ if(faceW<.12||faceH<.12){
+   info.innerHTML='<span class="bad">Move closer so your face is clearly visible.</span>';
+   setProgress(0);
+   return;
  }
- setProgress(done?100:p);
- if(done&&!verified){verified=true;info.innerHTML='<span class="ok">✓ Action verified. You can now capture the live photo.</span>';details.textContent='Hold your face steady, then press the Capture Live Photo button.';document.getElementById('capture').disabled=false}
+ info.innerHTML='<span class="ok">✓ Face detected. Follow the instruction if possible.</span>';
+ setProgress(100);
 }
 async function init(){
  if(!window.opener||window.opener.closed){info.innerHTML='<span class="bad">Open Live Camera from the OeHMIS Attendance screen.</span>';return}
@@ -76,7 +60,8 @@ async function init(){
    catch(e2){fail('Front camera permission denied. Allow camera access and reopen Live Camera.');return}
  }
  video.srcObject=stream;await video.play();
- info.textContent='Camera ready. Detecting your face...';
+ info.innerHTML='<span class="ok">✓ Camera ready. Capture is fully manual.</span>';
+   document.getElementById('capture').disabled=false;
  try{
    faceMesh=new FaceMesh({locateFile:(file)=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
    faceMesh.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:.65,minTrackingConfidence:.65});
@@ -85,11 +70,47 @@ async function init(){
  }catch(e){fail('Face verification library could not start. Check internet access and reload.');}
 }
 async function loop(){if(captured)return;try{await faceMesh.send({image:video})}catch(e){}requestAnimationFrame(loop)}
-function capture(){if(captured||!verified||!video.videoWidth)return;captured=true;processing=false;document.getElementById('capture').disabled=true;
- const c=document.createElement('canvas');const w=Math.min(video.videoWidth,900),h=Math.round(w*video.videoHeight/video.videoWidth);c.width=w;c.height=h;const x=c.getContext('2d');x.translate(w,0);x.scale(-1,1);x.drawImage(video,0,0,w,h);x.setTransform(1,0,0,1,0,0);
- x.fillStyle='rgba(0,0,0,.62)';x.fillRect(0,h-50,w,50);x.fillStyle='#fff';x.font='bold 14px Arial';x.fillText('OeHMIS • LIVE • VERIFIED • '+new Date().toLocaleString(),10,h-19);
- const data=c.toDataURL('image/jpeg',.78);stop();bar.style.width='100%';info.innerHTML='<span class="ok">✓ Live photo captured after action verification.</span>';details.textContent='Returning to OeHMIS...';
- if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'OEHMIS_LIVE_PHOTO',photoData:data,challenge,verified:true},'*');setTimeout(()=>window.close(),700)}else{fail('OeHMIS window is no longer available.');}
+function capture(){
+ if(captured||!video.videoWidth)return;
+ captured=true;
+ processing=false;
+ document.getElementById('capture').disabled=true;
+ const c=document.createElement('canvas');
+ const w=Math.min(video.videoWidth,900);
+ const h=Math.round(w*video.videoHeight/video.videoWidth);
+ c.width=w;c.height=h;
+ const x=c.getContext('2d');
+ // Mirror the front-camera image so the saved photo looks natural.
+ x.translate(w,0);x.scale(-1,1);
+ x.drawImage(video,0,0,w,h);
+ x.setTransform(1,0,0,1,0,0);
+ // Instruction watermark at the TOP of the saved photograph.
+ x.fillStyle='rgba(0,0,0,.72)';
+ x.fillRect(0,0,w,62);
+ x.fillStyle='#fff';
+ x.textAlign='center';
+ x.font='bold 20px Arial';
+ x.fillText('ACTION: '+challenge,w/2,25);
+ x.font='bold 13px Arial';
+ x.fillText('OeHMIS • LIVE PHOTO',w/2,47);
+ x.textAlign='left';
+ // Date/time watermark at the bottom.
+ x.fillStyle='rgba(0,0,0,.62)';
+ x.fillRect(0,h-42,w,42);
+ x.fillStyle='#fff';
+ x.font='bold 13px Arial';
+ x.fillText(new Date().toLocaleString(),10,h-16);
+ const data=c.toDataURL('image/jpeg',.82);
+ stop();
+ bar.style.width='100%';
+ info.innerHTML='<span class="ok">✓ Live photo captured.</span>';
+ details.textContent='Returning to OeHMIS...';
+ if(window.opener&&!window.opener.closed){
+   window.opener.postMessage({type:'OEHMIS_LIVE_PHOTO',photoData:data,challenge,verified:false,manualCapture:true},'*');
+   setTimeout(()=>window.close(),700);
+ }else{
+   fail('OeHMIS window is no longer available.');
+ }
 }
 document.getElementById('capture').onclick=capture;document.getElementById('cancel').onclick=()=>{stop();window.close()};window.addEventListener('beforeunload',stop);init();
 </script></body></html>
